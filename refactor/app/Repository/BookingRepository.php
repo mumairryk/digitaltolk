@@ -1014,7 +1014,7 @@ class BookingRepository extends BaseRepository
      * TEMP method
      * send session start remind notification
      */
-    public function sendSessionStartRemindNotification($user, $job, $language, $due, $duration)
+    public function temp($user, $job, $language, $due, $duration)
     {
 
         $this->logger->pushHandler(new StreamHandler(storage_path('logs/cron/laravel-' . date('Y-m-d') . '.log'), Logger::DEBUG));
@@ -1412,6 +1412,9 @@ class BookingRepository extends BaseRepository
             /*@todo
                 add flash message here.
             */
+            $response['message'] = 'Du har nu accepterat och fått bokningen för ' . $job->duration . 'min ' . $job->due;
+
+
             $jobs = $this->getPotentialJobs($cuser);
             $response = array();
             $response['list'] = json_encode(['jobs' => $jobs, 'job' => $job], true);
@@ -1492,6 +1495,7 @@ class BookingRepository extends BaseRepository
             if cancelation is within 24 hours - translator will be informed AND the customer will get an addition to his number of bookings - so we will charge of it if the cancelation is within 24 hours
             so we must treat it as if it was an executed session
         */
+
         $cuser = $user;
         $job_id = $data['job_id'];
         $job = Job::findOrFail($job_id);
@@ -1501,6 +1505,16 @@ class BookingRepository extends BaseRepository
             if ($job->withdraw_at->diffInHours($job->due) >= 24) {
                 $job->status = 'withdrawbefore24';
                 $response['jobstatus'] = 'success';
+                //supplier will be informed
+                $user = $job->user()->get()->first();
+                $email = $user->email;
+                $name = $user->name;
+                $subject = 'Avbokning av bokningsnr: #' . $job->id;
+                $dataEmail = [
+                    'user' => $user,
+                    'job'  => $job
+                ];
+                $this->mailer->send($email, $name, $subject, 'emails.job-cancel-customer', $dataEmail);
             } else {
                 $job->status = 'withdrawafter24';
                 $response['jobstatus'] = 'success';
@@ -1520,6 +1534,16 @@ class BookingRepository extends BaseRepository
                     $users_array = array($translator);
                     $this->sendPushNotificationToSpecificUsers($users_array, $job_id, $data, $msg_text, $this->isNeedToDelayPush($translator->id));// send Session Cancel Push to Translaotor
                 }
+                //Notify the translator about the cancelation
+                $user = $translator;
+                $email = $user->email;
+                $name = $user->name;
+                $subject = 'Avbokning av bokningsnr: #' . $job->id;
+                $dataEmail = [
+                    'user' => $user,
+                    'job'  => $job
+                ];
+                $this->mailer->send($email, $name, $subject, 'emails.job-cancel-translator', $dataEmail);
             }
         } else {
             if ($job->due->diffInHours(Carbon::now()) > 24) {
